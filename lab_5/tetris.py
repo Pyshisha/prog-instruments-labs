@@ -1,6 +1,22 @@
 import random
+import logging
 
 import pygame
+
+
+def setup_logging():
+    """Настройка логирования"""
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('tetris.log', encoding='utf-8'),
+            logging.StreamHandler()
+        ]
+    )
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 pygame.font.init()
 
@@ -145,6 +161,8 @@ class Piece:
         self.shape = shape
         self.color = SHAPE_COLORS[SHAPES.index(shape)]
         self.rotation = 0
+        shape_names = ['S', 'Z', 'I', 'O', 'J', 'L', 'T']
+        logger.info(f"Следующая фигура: {shape_names[SHAPES.index(shape)]}")
 
 
 # locked_pos is position that other pieces already in the grid
@@ -219,6 +237,7 @@ def check_lost(positions: dict) -> bool:
     for pos in positions:
         x, y = pos
         if y < -1:
+            logger.info("Игрок проиграл! Фигура достигла верха сетки.")
             return True
 
     return False
@@ -302,6 +321,8 @@ def clear_rows(grid: list, locked_positions: dict) -> int:
                 new_key = (x, y + increment)
                 locked_positions[new_key] = locked_positions.pop(key)
 
+        logger.info(f"Очищено строк: {increment}, блоков на поле: {len(locked_positions)}")
+
     return increment
 
 
@@ -341,6 +362,7 @@ def update_score(score: int) -> None:
     high_score = max_score()
     with open('scores.txt', 'w') as f:
         if int(high_score) < score:
+            logger.info(f"Новый рекорд. Старый: {high_score}, новый: {score}")
             f.write(str(score))
 
 
@@ -352,9 +374,18 @@ def max_score() -> str:
     try:
         with open('scores.txt', 'r') as f:
             lines = f.readlines()
-            high_score = lines[0].strip()
+            if lines and lines[0].strip():
+                high_score = lines[0].strip()
+            else:
+                high_score = "0"
+                logger.warning("Файл scores.txt пустой, установлен рекорд по умолчанию: 0")
     except FileNotFoundError:
         high_score = "0"
+        logger.warning("Файл scores.txt не найден, установлен рекорд по умолчанию: 0")
+    except Exception as e:
+        logger.error(f"Ошибка при чтении файла scores.txt: {e}, установлен рекорд по умолчанию: 0")
+        high_score = "0"
+
     return high_score
 
 
@@ -417,6 +448,8 @@ def main(surface: pygame.Surface) -> bool:
     """
     locked_positions = {}
 
+    logger.info("НАЧАЛО НОВОЙ ИГРЫ")
+
     change_piece = False
     run = True
     is_quit = False
@@ -429,6 +462,8 @@ def main(surface: pygame.Surface) -> bool:
     score = 0
     high_score = int(max_score())
 
+    logger.info(f"Начальные настройки: скорость={fall_speed}, рекорд={high_score}")
+
     while run:
         grid = create_grid(locked_positions)
         fall_time += clock.get_rawtime()
@@ -439,6 +474,7 @@ def main(surface: pygame.Surface) -> bool:
             level_time = 0
             if fall_speed > 0.3:
                 fall_speed -= 0.005
+                logger.debug(f"Скорость увеличена: {fall_speed:.3f}")
 
         if fall_time / 1000 > fall_speed:
             fall_time = 0
@@ -454,24 +490,29 @@ def main(surface: pygame.Surface) -> bool:
                 # which drawing function use down there will be dead display
                 # and it will throw exception
                 is_quit = True
+                logger.info("Игрок закрыл окно")
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_LEFT:
                     current_piece.x -= 1
                     if not (valid_space(current_piece, grid)):
                         current_piece.x += 1
+                    logger.debug("Движение влево")
                 if event.key == pygame.K_RIGHT:
                     current_piece.x += 1
                     if not (valid_space(current_piece, grid)):
                         current_piece.x -= 1
+                    logger.debug("Движение вправо")
                 if event.key == pygame.K_DOWN:
                     current_piece.y += 1
                     if not (valid_space(current_piece, grid)):
                         current_piece.y -= 1
+                    logger.debug("Ускоренное падение")
                 if event.key == pygame.K_UP:
                     current_piece.rotation += 1
                     if not (valid_space(current_piece, grid)):
                         current_piece.rotation -= 1
+                    logger.debug("Поворот фигуры")
 
         shape_pos = convert_shape_format(current_piece)
         # Put color of shape into grid
@@ -487,7 +528,10 @@ def main(surface: pygame.Surface) -> bool:
             current_piece = next_piece
             next_piece = get_shape()
             change_piece = False
-            score += clear_rows(grid, locked_positions) * 10
+            rows_cleared = clear_rows(grid, locked_positions)
+            score += rows_cleared * 10
+            if rows_cleared > 0:
+                logger.info(f"Начислено очков: +{rows_cleared * 10}, всего: {score}")
 
         # Window must be drawn first
         draw_window(surface, grid, score, high_score)
@@ -500,6 +544,7 @@ def main(surface: pygame.Surface) -> bool:
             pygame.time.delay(1500)
             run = False
             update_score(score)
+            logger.info(f"ИГРА ЗАВЕРШЕНА. Финальный счет: {score}")
 
     # We couldn't call pygame.display.quit()
     # here too because same thing happen
@@ -513,6 +558,7 @@ def main_menu(surface: pygame.Surface) -> None:
     :param surface: Surface to draw on
     """
     run = True
+    logger.info("Открыто главное меню")
     while run:
         surface.fill((0, 0, 0))
         draw_text_middle(surface, 'Press any key to play!', 60, (255, 255, 255))
@@ -520,7 +566,9 @@ def main_menu(surface: pygame.Surface) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
+                logger.info("Выход из меню")
             if event.type == pygame.KEYDOWN:
+                logger.info("Запуск игры из меню")
                 run = not main(surface)
     pygame.display.quit()
 
@@ -529,9 +577,15 @@ def run_game() -> None:
     """
     Initialize the game window and run the main menu.
     """
-    window = pygame.display.set_mode((S_WIDTH, S_HEIGHT))
-    pygame.display.set_caption('Tetris')
-    main_menu(window)
+    try:
+        logger.info("ЗАПУСК ПРИЛОЖЕНИЯ TETRIS")
+        window = pygame.display.set_mode((S_WIDTH, S_HEIGHT))
+        pygame.display.set_caption('Tetris')
+        main_menu(window)
+        logger.info("ЗАВЕРШЕНИЕ РАБОТЫ")
+    except Exception as e:
+        logger.critical(f"КРИТИЧЕСКАЯ ОШИБКА: {str(e)}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
     run_game()
